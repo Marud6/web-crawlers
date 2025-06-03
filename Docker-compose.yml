@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"     # AMQP protocol
+      - "15672:15672"   # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    networks:
+      - rebitmqkeydb_default
+    healthcheck:
+      test: [ "CMD", "rabbitmqctl", "status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  keydb:
+    image: eqalpha/keydb
+    container_name: keydb
+    ports:
+      - "6379:6379"
+    volumes:
+      - keydb_data:/data
+    command: keydb-server /etc/keydb/keydb.conf --appendonly yes
+    restart: unless-stopped
+    networks:
+      - rebitmqkeydb_default
+
+  orchestrator:
+    build: orchestrator/docker-api
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - rebitmqkeydb_default
+  frontend:
+    build: crawler-GUI
+    ports:
+      - "80:80"   # maps container's port 80 (nginx) to host 8080
+    restart: unless-stopped
+  crawler:
+    build: ./crawler
+    image: crawler-image
+
+
+
+volumes:
+  rabbitmq_data:
+  keydb_data:
+networks:
+  rebitmqkeydb_default:
+    external: true
