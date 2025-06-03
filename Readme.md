@@ -1,57 +1,53 @@
-run docker compose up --build
-and on localhost:80 will be gui
-this is web crawling workers with management using gui in web browser rabbitMq for distribution and 
-keyDB as cashing of links already visited requairment is docker web crawler worker and
-orchestrator are written in go
-web app is in go 
+# 🕷️ Web Crawler Orchestrator with GUI
 
+Run a scalable, distributed web crawling system **with a browser-based GUI** — all powered by Docker!
 
-Web Crawler Orchestrator with GUI
-Run a scalable, distributed web crawling system with an easy-to-use web GUI — all powered by Docker!
+---
 
-🚀 Quick Start
-bash
-Zkopírovat
-Upravit
+## 🚀 Quick Start
+
+```bash
 docker-compose up --build
 Then open your browser at http://localhost:80 to access the management interface.
 
-What is this?
-This project implements a web crawling orchestration platform featuring:
+📦 Project Overview
+This project implements a web crawling orchestration platform that allows you to manage distributed crawling tasks with:
 
-Distributed workers for crawling, coordinated by a central orchestrator
+🧠 Go-based orchestrator to manage crawling workers
 
-RabbitMQ for reliable task distribution between components
+⚙️ Crawling workers in Go, connected via RabbitMQ
 
-KeyDB for caching already visited links to avoid duplication
+📊 Web GUI in Vue.js 
 
-A modern web GUI for managing and monitoring crawling workers and tasks
+📨 RabbitMQ for message distribution
 
-All components are built in Go for high performance and easy deployment.
+💾 KeyDB for caching visited URLs
 
-Components
-Orchestrator — manages worker lifecycle, schedules crawling jobs
+Everything runs in Docker containers with a single docker-compose up.
 
-Workers — perform crawling tasks distributed via RabbitMQ
+📁 Project Structure
+bash
+Zkopírovat
+Upravit
+.
+├── crawler/            # Go crawler service with Dockerfile
+├── orchestrator/       # Go orchestrator API
+├── web/                # Vue.js frontend app
+├── docker-compose.yml  # Multi-service definition
+└── README.md           # This file
 
-Web App (GUI) — browser-based dashboard to view status, start/stop workers, and manage seeds
+🧰 Requirements
+Docker
+Docker Compose
 
-RabbitMQ — message queue for task coordination
 
-KeyDB — caching layer for visited URLs
+✅ Features
+Start/stop crawling workers dynamically
 
-Requirements
-Docker & Docker Compose
+Send new seed URLs to the queue
 
-Ports 80 (GUI), 5672 (RabbitMQ), and others as configured
+Avoid duplicate crawling with fast KeyDB cache
 
-Why?
-Scalable crawling architecture
+Simple browser interface for control and visibility
 
-Easy management via GUI
-
-Cache layer reduces redundant crawling
-
-Entirely containerized — no manual setup
-
-Feel free to explore, contribute, and scale your own crawlers with ease!
+Logs and status monitoring built in
