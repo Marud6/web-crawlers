@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "amqplib": "^0.10.8",
     "vue": "^3.5.13"
   },
   "devDependencies": {

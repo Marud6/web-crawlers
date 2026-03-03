@@ -1,69 +1,95 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
-	"context"
+	"syscall"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 	"github.com/streadway/amqp"
 	"golang.org/x/net/html"
-	"github.com/redis/go-redis/v9"
 )
 
 var (
-	mu sync.Mutex
-	wg sync.WaitGroup
-	ch *amqp.Channel
-	rdb *redis.Client
-    ctx = context.Background()
+	mu         sync.Mutex
+	wg         sync.WaitGroup
+	ch         *amqp.Channel
+	rdb        *redis.Client
+	ctx        = context.Background()
+	maxWorkers = 10
+	sem        chan struct{}
+	httpClient = &http.Client{Timeout: 10 * time.Second}
 )
 
 func main() {
-    conn, err := amqp.Dial("amqp://user:password@rabbitmq:5672/")
+	amqpURL := os.Getenv("AMQP_URL")
+	if amqpURL == "" {
+		amqpURL = "amqp://user:password@rabbitmq:5672/"
+	}
+
+	conn, err := amqp.Dial(amqpURL)
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
+
 	ch, err = conn.Channel()
 	failOnError(err, "Failed to open a channel")
 	defer ch.Close()
+
 	q, err := ch.QueueDeclare("urls", true, false, false, false, nil)
 	failOnError(err, "Failed to declare a queue")
+
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "keydb:6379"
+	}
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     "keydb:6379",
-		Password: "",
+		Addr:     redisAddr,
+		Password: os.Getenv("REDIS_PASSWORD"),
 		DB:       0,
 	})
+
+	sem = make(chan struct{}, maxWorkers)
+
 	urls, err := ch.Consume(
 		q.Name,
 		"",
-		true,  // auto-ack
-		false, // exclusive
+		false, // manual ack (#22)
+		false,
 		false,
 		false,
 		nil,
 	)
 	failOnError(err, "Failed to register a consumer")
 
-
-	var forever chan struct{}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		for d := range urls {
 			link := string(d.Body)
 			log.Printf("Received: %s", link)
 			wg.Add(1)
-			crawl(link)
+			go crawl(link, d)
 		}
 	}()
 
-	log.Println(" [*] Waiting for messages. To exit press CTRL+C")
-	<-forever
+	log.Println("[*] Waiting for messages. To exit press CTRL+C")
+
+	<-sigCh
+	log.Println("Shutting down gracefully...")
+	wg.Wait()
+	log.Println("All workers finished. Exiting.")
 }
 
-
+// isVisited checks Redis for whether a URL has already been crawled.
+// On Redis failure, returns false (URL will be re-crawled).
 func isVisited(url string) bool {
 	exists, err := rdb.SIsMember(ctx, "visited-urls", url).Result()
 	if err != nil {
@@ -72,6 +98,7 @@ func isVisited(url string) bool {
 	}
 	return exists
 }
+
 func markVisited(url string) {
 	err := rdb.SAdd(ctx, "visited-urls", url).Err()
 	if err != nil {
@@ -79,48 +106,57 @@ func markVisited(url string) {
 	}
 }
 
-// limit to urls in list
-func crawl(link string) {
-	go func() {
-	    if(isVisited(link)){
-	    return
-	    }
-		defer wg.Done()
-	    fmt.Println("Crawling:", link)
-		resp, err := http.Get(link)
+func crawl(link string, d amqp.Delivery) {
+	defer wg.Done() // #1: always called, even on early return
+
+	sem <- struct{}{}        // #16: acquire semaphore slot
+	defer func() { <-sem }() // release slot when done
+
+	if isVisited(link) {
+		if err := d.Ack(false); err != nil {
+			log.Printf("Failed to ack visited URL %s: %v", link, err)
+		}
+		return
+	}
+
+	log.Printf("Crawling: %s", link)
+	resp, err := httpClient.Get(link) // #17: client with timeout
+	if err != nil {
+		log.Printf("GET error for %s: %v", link, err)
+		if err := d.Nack(false, true); err != nil {
+			log.Printf("Failed to nack %s: %v", link, err)
+		}
+		return
+	}
+
+	links := extractLinks(resp, link)
+	resp.Body.Close() // #8: close body right after reading
+
+	markVisited(link)
+
+	mu.Lock() // #23: protect shared channel from concurrent access
+	for _, l := range links {
+		err := ch.Publish(
+			"",
+			"urls",
+			false,
+			false,
+			amqp.Publishing{
+				ContentType: "text/plain",
+				Body:        []byte(l),
+			},
+		)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "GET error: %s\n", err)
-			return
+			log.Printf("Failed to publish link %s: %v", l, err)
+		} else {
+			log.Printf("Enqueued: %s", l)
 		}
-        markVisited(link)
+	}
+	mu.Unlock()
 
-		defer resp.Body.Close()
-
-        //data := extractDataFromPage(resp)
-		links := extractLinks(resp, link)
-
-		for _, l := range links {
-			err := ch.Publish(
-				"",
-				"urls",
-				false,
-				false,
-				amqp.Publishing{
-					ContentType: "text/plain",
-					Body:        []byte(l),
-				},
-			)
-			if err != nil {
-				log.Printf("Failed to publish link %s: %v", l, err)
-			} else {
-				log.Printf("Enqueued: %s", l)
-			}
-		}
-	}()
-}
-
-func extractDataFromPage(resp *http.Response){
-return
+	if err := d.Ack(false); err != nil { // #22: manual ack after success
+		log.Printf("Failed to ack %s: %v", link, err)
+	}
 }
 
 func extractLinks(resp *http.Response, base string) []string {
@@ -168,6 +204,3 @@ func failOnError(err error, msg string) {
 		log.Fatalf("%s: %s", msg, err)
 	}
 }
-
-
-

@@ -1,53 +1,59 @@
-# 🕷️ Web Crawler Orchestrator with GUI
+# Web Crawler Orchestrator
 
-Run a scalable, distributed web crawling system **with a browser-based GUI** — all powered by Docker!
+A distributed web crawling system with a browser-based management dashboard. All services are containerized and run with a single command.
 
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-docker-compose up --build
-Then open your browser at http://localhost:80 to access the management interface.
+docker compose up --build
+```
 
-📦 Project Overview
-This project implements a web crawling orchestration platform that allows you to manage distributed crawling tasks with:
+Open http://localhost to access the dashboard.
 
-🧠 Go-based orchestrator to manage crawling workers
+## Architecture
 
-⚙️ Crawling workers in Go, connected via RabbitMQ
+| Component | Technology | Description |
+|-----------|------------|-------------|
+| Orchestrator | Go | REST API that manages crawler worker containers via the Docker socket |
+| Crawler | Go | Consumes URLs from RabbitMQ, extracts links, and enqueues discovered URLs |
+| Frontend | Vue 3 + Nginx | Dashboard for starting/stopping workers and submitting seed URLs |
+| Message Queue | RabbitMQ | Distributes URLs across crawler instances |
+| Cache | KeyDB | Tracks visited URLs to prevent duplicate crawling |
 
-📊 Web GUI in Vue.js 
+The orchestrator dynamically creates and destroys crawler containers at runtime. On shutdown, it stops all spawned crawler containers before exiting.
 
-📨 RabbitMQ for message distribution
+## Project Structure
 
-💾 KeyDB for caching visited URLs
-
-Everything runs in Docker containers with a single docker-compose up.
-
-📁 Project Structure
-bash
-Zkopírovat
-Upravit
+```
 .
-├── crawler/            # Go crawler service with Dockerfile
-├── orchestrator/       # Go orchestrator API
-├── web/                # Vue.js frontend app
-├── docker-compose.yml  # Multi-service definition
-└── README.md           # This file
+├── crawler/                # Go crawler worker with Dockerfile
+├── orchestrator/
+│   └── docker-api/         # Go orchestrator API with Dockerfile
+├── crawler-GUI/            # Vue 3 frontend application
+├── docker-compose.yml      # Multi-service container definition
+└── Readme.md
+```
 
-🧰 Requirements
-Docker
-Docker Compose
+## Requirements
 
+- Docker
+- Docker Compose
 
-✅ Features
-Start/stop crawling workers dynamically
+## Features
 
-Send new seed URLs to the queue
+- Start and stop crawler workers dynamically from the dashboard
+- Submit seed URLs to begin crawling
+- Deduplicate visited URLs using KeyDB
+- Auto-polling dashboard with loading states and error feedback
+- Responsive worker card grid with confirmation dialogs
+- Graceful shutdown — all crawler containers are cleaned up on `docker compose down`
 
-Avoid duplicate crawling with fast KeyDB cache
+## Ports
 
-Simple browser interface for control and visibility
-
-Logs and status monitoring built in
+| Service | Port |
+|---------|------|
+| Frontend | 80 |
+| Orchestrator API | 8080 |
+| RabbitMQ Management | 15672 |
+| RabbitMQ AMQP | 5672 |
+| KeyDB | 6379 |
