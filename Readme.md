@@ -57,3 +57,8 @@ The orchestrator dynamically creates and destroys crawler containers at runtime.
 | RabbitMQ Management | 15672 |
 | RabbitMQ AMQP | 5672 |
 | KeyDB | 6379 |
+
+## Screen Shots
+<img width="1915" height="869" alt="Snímek obrazovky 2026-03-03 110415" src="https://github.com/user-attachments/assets/5a0e853c-4fb9-4939-8899-c9a847925972" />
+
+
